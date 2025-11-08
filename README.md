@@ -73,6 +73,43 @@ Comprehensive market analysis combining multiple data sources:
 
 **Example**: "Give me a full analysis of trump-wins-2024"
 
+## Prompts Included
+
+Prompts provide guided workflows for common use cases:
+
+### 1. `analyze_market`
+Get comprehensive analysis of a specific market by slug.
+- **Args**: `market_slug` (e.g., "trump-wins-2024")
+- **Use**: Provides probabilities, trading activity, market health, and sentiment analysis
+
+### 2. `find_trending`
+Discover the most active prediction markets.
+- **Args**: `category` (optional, e.g., "politics", "sports")
+- **Use**: Shows top 10 high-volume markets with analysis
+
+### 3. `compare_event`
+Analyze and compare all markets within an event.
+- **Args**: `event_slug` (e.g., "presidential-election-2024")
+- **Use**: Compares related markets and identifies patterns
+
+### 4. `market_discovery`
+Explore markets in a specific category.
+- **Args**: `category` (e.g., "crypto", "economics")
+- **Use**: Discovers markets with strong consensus or divided opinion
+
+## Resources Exposed
+
+Resources provide direct access to curated market data:
+
+### 1. `polymarket://trending`
+Currently trending markets with high volume and activity (top 20 by 24h volume)
+
+### 2. `polymarket://categories`
+All available tags/categories for filtering markets (up to 100 tags)
+
+### 3. `polymarket://featured`
+Featured events with multiple related markets (top 10 featured events)
+
 ## Use Cases
 
 ### Market Analysis Tools
@@ -205,7 +242,10 @@ The server is organized into:
 - `formatTradesSummary()` - Summarize trading activity
 
 ### MCP Tools
-Seven tools registered with the MCP server, each with comprehensive schemas and error handling.
+- 7 tools with comprehensive schemas, error handling, and annotations
+- All tools are annotated as read-only, non-destructive, and idempotent
+- 4 prompts for common workflows (market analysis, trending, comparison, discovery)
+- 3 resources exposing curated data (trending markets, categories, featured events)
 
 ## Example Conversations
 
