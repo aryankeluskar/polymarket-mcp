@@ -238,38 +238,44 @@ Always explain what the probabilities mean and provide context for the markets y
 
     // Handle tool use loop
     while (response.stop_reason === "tool_use") {
-      const toolUse = response.content.find(
+      // Find ALL tool_use blocks (Claude might call multiple tools at once)
+      const toolUseBlocks = response.content.filter(
         (block) => block.type === "tool_use"
-      ) as Anthropic.Messages.ToolUseBlock | undefined;
+      ) as Anthropic.Messages.ToolUseBlock[];
 
-      if (!toolUse) break;
+      if (toolUseBlocks.length === 0) break;
 
-      console.log(`🔧 Tool called: ${toolUse.name}`);
-      console.log(`   Input:`, JSON.stringify(toolUse.input, null, 2));
-
-      // Call the MCP tool
-      const toolResult = await mcpClient!.callTool({
-        name: toolUse.name,
-        arguments: toolUse.input as Record<string, unknown>,
-      });
-
-      console.log(`✅ Tool result received`);
-
-      // Continue conversation with tool result
+      // Add assistant message with tool uses
       messages.push({
         role: "assistant",
         content: response.content,
       });
 
+      // Call all tools and collect results
+      const toolResults = await Promise.all(
+        toolUseBlocks.map(async (toolUse) => {
+          console.log(`🔧 Tool called: ${toolUse.name}`);
+          console.log(`   Input:`, JSON.stringify(toolUse.input, null, 2));
+
+          const result = await mcpClient!.callTool({
+            name: toolUse.name,
+            arguments: toolUse.input as Record<string, unknown>,
+          });
+
+          console.log(`✅ Tool result received for ${toolUse.name}`);
+
+          return {
+            type: "tool_result" as const,
+            tool_use_id: toolUse.id,
+            content: JSON.stringify(result.content),
+          };
+        })
+      );
+
+      // Add user message with all tool results
       messages.push({
         role: "user",
-        content: [
-          {
-            type: "tool_result",
-            tool_use_id: toolUse.id,
-            content: JSON.stringify(toolResult.content),
-          },
-        ],
+        content: toolResults,
       });
 
       response = await anthropic.messages.create({
