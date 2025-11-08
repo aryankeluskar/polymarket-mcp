@@ -318,6 +318,11 @@ export default function createServer({
         order: z.string().optional().describe("Field to order by (e.g., 'volume', 'liquidity')"),
         ascending: z.boolean().optional().describe("Sort direction (true = ascending, false = descending)"),
       },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+      },
     },
     async (params) => {
       try {
@@ -357,6 +362,11 @@ export default function createServer({
       description: "Get detailed information about a specific market by slug. Returns probabilities, volume, liquidity, outcomes, and full market data.",
       inputSchema: {
         slug: z.string().describe("Market slug (from URL or search results)"),
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
       },
     },
     async ({ slug }) => {
@@ -406,6 +416,11 @@ export default function createServer({
         order: z.string().optional().describe("Field to order by"),
         ascending: z.boolean().optional().describe("Sort direction"),
       },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+      },
     },
     async (params) => {
       try {
@@ -445,6 +460,11 @@ export default function createServer({
       description: "Get detailed information about a specific event by slug, including all related markets.",
       inputSchema: {
         slug: z.string().describe("Event slug (from URL or search results)"),
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
       },
     },
     async ({ slug }) => {
@@ -502,6 +522,11 @@ export default function createServer({
         limit: z.number().optional().default(50).describe("Number of tags to return"),
         offset: z.number().optional().default(0).describe("Pagination offset"),
       },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+      },
     },
     async (params) => {
       try {
@@ -542,6 +567,11 @@ export default function createServer({
         market: z.string().optional().describe("Filter by market condition ID"),
         eventId: z.string().optional().describe("Filter by event ID"),
         side: z.enum(["BUY", "SELL"]).optional().describe("Filter by trade side"),
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
       },
     },
     async (params) => {
@@ -590,6 +620,11 @@ export default function createServer({
       inputSchema: {
         slug: z.string().describe("Market slug to analyze"),
         include_trades: z.boolean().optional().default(true).describe("Include recent trading activity"),
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
       },
     },
     async ({ slug, include_trades }) => {
@@ -657,6 +692,225 @@ export default function createServer({
         return {
           content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : 'Unknown error'}` }],
           isError: true,
+        }
+      }
+    }
+  )
+
+  // ==========================================================================
+  // PROMPTS - Common use cases
+  // ==========================================================================
+
+  server.registerPrompt(
+    "analyze_market",
+    {
+      title: "Analyze Specific Market",
+      description: "Get comprehensive analysis of a specific Polymarket prediction market",
+      argsSchema: {
+        market_slug: z.string().describe("The market slug (e.g., trump-wins-2024)"),
+      },
+    },
+    async ({ market_slug }) => {
+      return {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: `Please analyze the Polymarket prediction market "${market_slug}". Use the analyze_market tool to get comprehensive data including probabilities, trading activity, market health, and sentiment. Provide insights on what the market is predicting and how confident traders are.`,
+            },
+          },
+        ],
+      }
+    }
+  )
+
+  server.registerPrompt(
+    "find_trending",
+    {
+      title: "Find Trending Markets",
+      description: "Discover the most active and high-volume prediction markets",
+      argsSchema: {
+        category: z.string().optional().describe("Optional category/tag to filter by (e.g., politics, sports, crypto)"),
+      },
+    },
+    async ({ category }) => {
+      const categoryText = category ? ` in the ${category} category` : ""
+      return {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: `Find the most active and trending prediction markets${categoryText}. Use search_markets with appropriate filters to find high-volume, high-liquidity markets that are currently active. Order by volume and show me the top 10. For each market, provide the current probability, volume, and a brief analysis of what it's predicting.`,
+            },
+          },
+        ],
+      }
+    }
+  )
+
+  server.registerPrompt(
+    "compare_event",
+    {
+      title: "Compare Markets in Event",
+      description: "Analyze and compare all markets within a specific event",
+      argsSchema: {
+        event_slug: z.string().describe("The event slug (e.g., presidential-election-2024)"),
+      },
+    },
+    async ({ event_slug }) => {
+      return {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: `Analyze the Polymarket event "${event_slug}" and compare all markets within it. Use get_event to retrieve the event and all its markets. For each market, show the current probabilities and trading volume. Identify any interesting patterns or contradictions between related markets. Summarize the overall prediction for this event.`,
+            },
+          },
+        ],
+      }
+    }
+  )
+
+  server.registerPrompt(
+    "market_discovery",
+    {
+      title: "Discover Markets by Category",
+      description: "Explore prediction markets in a specific category or topic",
+      argsSchema: {
+        category: z.string().describe("Category or topic to explore (e.g., politics, sports, crypto, economics)"),
+      },
+    },
+    async ({ category }) => {
+      return {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: `Help me discover prediction markets related to "${category}". First, use list_tags to find relevant category tags. Then use search_markets with the appropriate tag_id to find active markets in this category. Show me the most interesting markets with their current probabilities, volume, and what they're predicting. Highlight any markets with strong consensus (>75% probability) or divided opinion (<60% probability).`,
+            },
+          },
+        ],
+      }
+    }
+  )
+
+  // ==========================================================================
+  // RESOURCES - Expose useful market data
+  // ==========================================================================
+
+  server.registerResource(
+    "trending-markets",
+    "polymarket://trending",
+    {
+      title: "Trending Markets",
+      description: "Currently trending prediction markets with high volume and activity",
+      mimeType: "application/json",
+    },
+    async () => {
+      try {
+        const markets = await client.searchMarkets({
+          limit: 20,
+          closed: false,
+          order: "volume24hr",
+          ascending: false,
+        })
+
+        return {
+          contents: [
+            {
+              uri: "polymarket://trending",
+              mimeType: "application/json",
+              text: JSON.stringify(markets, null, 2),
+            },
+          ],
+        }
+      } catch (error) {
+        return {
+          contents: [
+            {
+              uri: "polymarket://trending",
+              mimeType: "text/plain",
+              text: `Error fetching trending markets: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            },
+          ],
+        }
+      }
+    }
+  )
+
+  server.registerResource(
+    "market-categories",
+    "polymarket://categories",
+    {
+      title: "Market Categories",
+      description: "All available categories/tags for filtering Polymarket prediction markets",
+      mimeType: "application/json",
+    },
+    async () => {
+      try {
+        const tags = await client.listTags({ limit: 100 })
+
+        return {
+          contents: [
+            {
+              uri: "polymarket://categories",
+              mimeType: "application/json",
+              text: JSON.stringify(tags, null, 2),
+            },
+          ],
+        }
+      } catch (error) {
+        return {
+          contents: [
+            {
+              uri: "polymarket://categories",
+              mimeType: "text/plain",
+              text: `Error fetching categories: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            },
+          ],
+        }
+      }
+    }
+  )
+
+  server.registerResource(
+    "featured-events",
+    "polymarket://featured",
+    {
+      title: "Featured Events",
+      description: "Featured prediction market events with multiple related markets",
+      mimeType: "application/json",
+    },
+    async () => {
+      try {
+        const events = await client.searchEvents({
+          limit: 10,
+          featured: true,
+          closed: false,
+        })
+
+        return {
+          contents: [
+            {
+              uri: "polymarket://featured",
+              mimeType: "application/json",
+              text: JSON.stringify(events, null, 2),
+            },
+          ],
+        }
+      } catch (error) {
+        return {
+          contents: [
+            {
+              uri: "polymarket://featured",
+              mimeType: "text/plain",
+              text: `Error fetching featured events: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            },
+          ],
         }
       }
     }
