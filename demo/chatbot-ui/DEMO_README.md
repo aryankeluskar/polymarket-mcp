@@ -15,7 +15,7 @@ This demo demonstrates how to leverage Polymarket's prediction markets with Clau
 │   React Frontend    │ ◄─────► │  Node.js Backend     │ ◄─────► │  Polymarket MCP    │
 │   (Chat UI)         │   WS    │  (MCP Client +       │  HTTP   │    (Smithery)      │
 │   Port 5173         │         │   Claude AI)         │         │                    │
-│                     │         │  Port 8090           │         │                    │
+│                     │         │  Port 5090           │         │                    │
 └─────────────────────┘         └──────────────────────┘         └────────────────────┘
 ```
 
@@ -53,7 +53,7 @@ echo "ANTHROPIC_API_KEY=your_key_here" >> .env
 bun run dev
 ```
 
-The backend will start on `http://localhost:8090`.
+The backend will start on `http://localhost:5090`.
 
 ### 2. Frontend Setup
 
@@ -276,7 +276,7 @@ Claude: [Uses list_tags to show categories]
 
 **WebSocket connection refused**
 - Ensure backend is running (`bun run dev`)
-- Check port 8090 is not in use
+- Check port 5090 is not in use
 - Verify firewall settings
 
 ### Frontend Issues
@@ -330,7 +330,7 @@ bun run build
 Set environment variables:
 - `ANTHROPIC_API_KEY`
 - `POLYMARKET_MCP_URL`
-- `PORT` (if different from 8090)
+- `PORT` (if different from 5090)
 
 ### Frontend Deployment
 

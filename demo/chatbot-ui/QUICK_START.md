@@ -45,7 +45,7 @@ Please complete authentication by visiting:
   👉 https://smithery.ai/oauth/authorize?client_id=...
 
 After authorizing, you'll be redirected to:
-  http://localhost:8090/oauth/callback
+  http://localhost:5090/oauth/callback
 
 The server will automatically continue once authenticated.
 ================================================================================
@@ -78,8 +78,8 @@ After OAuth completes, you should see:
    7. analyze_market - Get comprehensive market analysis...
 
 ✅ Backend ready!
-📡 WebSocket server: ws://localhost:8090
-🌐 HTTP server: http://localhost:8090
+📡 WebSocket server: ws://localhost:5090
+🌐 HTTP server: http://localhost:5090
 ```
 
 ## Step 4: Frontend Setup
@@ -142,8 +142,8 @@ What categories of prediction markets are available on Polymarket?
 **Error**: `ANTHROPIC_API_KEY is required`
 - **Fix**: Make sure you created `.env` file in the `backend/` directory with your API key
 
-**Error**: `Port 8090 already in use`
-- **Fix**: Stop any other servers running on port 8090, or change `PORT` in `.env`
+**Error**: `Port 5090 already in use`
+- **Fix**: Stop any other servers running on port 5090, or change `PORT` in `.env`
 
 ### OAuth issues
 
@@ -156,8 +156,8 @@ What categories of prediction markets are available on Polymarket?
 ### Frontend won't connect
 
 **Error**: `WebSocket connection failed`
-- **Fix**: Make sure the backend is running on port 8090
-- **Check**: Visit `http://localhost:8090/health` - should show `{"status":"ok","mcpConnected":true}`
+- **Fix**: Make sure the backend is running on port 5090
+- **Check**: Visit `http://localhost:5090/health` - should show `{"status":"ok","mcpConnected":true}`
 
 ### No AI responses
 
@@ -207,13 +207,13 @@ bun run preview  # Preview production build
 ```bash
 ANTHROPIC_API_KEY=sk-ant-...           # Required
 POLYMARKET_MCP_URL=https://...         # Optional (has default)
-PORT=8090                              # Optional (default: 8090)
+PORT=5090                              # Optional (default: 5090)
 ```
 
 ### Health Check
 
 ```bash
-curl http://localhost:8090/health
+curl http://localhost:5090/health
 ```
 
 Expected response:

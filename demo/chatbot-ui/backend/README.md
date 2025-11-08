@@ -37,7 +37,7 @@ Backend server for the Polymarket MCP demo application. Connects to the Polymark
    bun run dev
    ```
 
-The server will start on `http://localhost:8090` with WebSocket support.
+The server will start on `http://localhost:5090` with WebSocket support.
 
 ### OAuth Authentication (First Time Setup)
 
@@ -58,7 +58,7 @@ The first time you run the server, you'll need to authenticate with Smithery to 
      👉 https://smithery.ai/oauth/authorize?...
 
    After authorizing, you'll be redirected to:
-     http://localhost:8090/oauth/callback
+     http://localhost:5090/oauth/callback
    ```
 
 3. **Open the URL in your browser** and authorize the app
@@ -105,7 +105,7 @@ Returns available Polymarket tools:
 
 ## WebSocket Interface
 
-Connect to `ws://localhost:8090` to send messages and receive streaming responses.
+Connect to `ws://localhost:5090` to send messages and receive streaming responses.
 
 **Message Format**:
 - Send: Plain text message
@@ -156,7 +156,7 @@ https://server.smithery.ai/@aryankeluskar/polymarket-mcp/mcp
 ```
 
 ### WebSocket connection refused
-Ensure the backend is running on the correct port (default: 8090).
+Ensure the backend is running on the correct port (default: 5090).
 
 ## Example Queries
 

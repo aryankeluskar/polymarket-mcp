@@ -14,7 +14,7 @@ dotenv.config();
 // CONFIGURATION
 // ============================================================================
 
-const PORT = process.env.PORT || 8090;
+const PORT = process.env.PORT || 5090;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const POLYMARKET_MCP_URL = process.env.POLYMARKET_MCP_URL ||
   "https://server.smithery.ai/@aryankeluskar/polymarket-mcp/mcp";
@@ -314,7 +314,7 @@ Always explain what the probabilities mean and provide context for the markets y
                 arguments: toolUse.input as Record<string, unknown>,
               });
 
-              console.log(`✅ Tool result received for ${toolUse.name}`);
+              console.log(`✅ Tool result received for ${toolUse.name} : ${JSON.stringify(result.content)}`);
 
               return {
                 type: "tool_result" as const,

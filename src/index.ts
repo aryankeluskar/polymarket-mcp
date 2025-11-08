@@ -69,9 +69,110 @@ interface Trade {
 const GAMMA_API_BASE = "https://gamma-api.polymarket.com"
 const DATA_API_BASE = "https://data-api.polymarket.com"
 
+// Search API response types
+interface SearchMarket {
+  id: string
+  question: string
+  conditionId: string
+  slug: string
+  description?: string
+  outcomes: string // JSON string
+  outcomePrices: string // JSON string
+  volume: string
+  liquidity: string
+  volume24hr?: number
+  volumeNum?: number
+  liquidityNum?: number
+  active: boolean
+  closed: boolean
+  endDate: string
+  startDate?: string
+  category?: string
+  bestBid?: number
+  bestAsk?: number
+}
+
+interface SearchEvent {
+  id: string
+  slug: string
+  title: string
+  description?: string
+  startDate?: string
+  endDate?: string
+  active: boolean
+  closed: boolean
+  archived: boolean
+  liquidity: number
+  volume: number
+  volume24hr?: number
+  markets?: SearchMarket[]
+  tags?: Tag[]
+}
+
+interface SearchResponse {
+  events: SearchEvent[]
+  tags?: Tag[]
+  profiles?: unknown[]
+  pagination?: {
+    hasMore: boolean
+    totalResults: number
+  }
+}
+
 class PolymarketClient {
   /**
-   * Search for markets with various filters
+   * Normalize search market to Market format
+   */
+  private normalizeMarket(market: SearchMarket): Market {
+    // Parse JSON strings for outcomes and outcomePrices
+    let outcomes: string[] = []
+    let outcomePrices: string[] = []
+
+    try {
+      if (market.outcomes) {
+        outcomes = typeof market.outcomes === 'string' 
+          ? JSON.parse(market.outcomes) 
+          : market.outcomes
+      }
+    } catch (e) {
+      // If parsing fails, use empty array
+      outcomes = []
+    }
+
+    try {
+      if (market.outcomePrices) {
+        outcomePrices = typeof market.outcomePrices === 'string'
+          ? JSON.parse(market.outcomePrices)
+          : market.outcomePrices
+      }
+    } catch (e) {
+      // If parsing fails, use empty array
+      outcomePrices = []
+    }
+
+    return {
+      id: market.id,
+      question: market.question,
+      conditionId: market.conditionId,
+      slug: market.slug,
+      description: market.description,
+      outcomes,
+      outcomePrices,
+      volume: market.volume,
+      liquidity: market.liquidity,
+      active: market.active,
+      closed: market.closed,
+      endDate: market.endDate,
+      startDate: market.startDate,
+      category: market.category,
+      volume24hr: market.volume24hr?.toString() || market.volumeNum?.toString(),
+      bestBid: market.bestBid?.toString(),
+      bestAsk: market.bestAsk?.toString(),
+    }
+  }
+
+  /**
+   * Search for markets using the public-search endpoint
    */
   async searchMarkets(params: {
     query?: string
@@ -86,24 +187,81 @@ class PolymarketClient {
   }): Promise<Market[]> {
     const queryParams = new URLSearchParams()
 
-    if (params.query) queryParams.append("query", params.query)
-    if (params.limit !== undefined) queryParams.append("limit", params.limit.toString())
-    if (params.offset !== undefined) queryParams.append("offset", params.offset.toString())
-    if (params.closed !== undefined) queryParams.append("closed", params.closed.toString())
-    if (params.tag_id !== undefined) queryParams.append("tag_id", params.tag_id.toString())
-    if (params.liquidity_min !== undefined) queryParams.append("liquidity_num_min", params.liquidity_min.toString())
-    if (params.volume_min !== undefined) queryParams.append("volume_num_min", params.volume_min.toString())
-    if (params.order) queryParams.append("order", params.order)
+    // Map to public-search API parameters
+    if (params.query) queryParams.append("q", params.query)
+    if (params.limit !== undefined) queryParams.append("limit_per_type", params.limit.toString())
+    if (params.offset !== undefined) queryParams.append("page", Math.floor(params.offset / (params.limit || 10)).toString())
+    if (params.closed !== undefined) {
+      queryParams.append("events_status", params.closed ? "closed" : "open")
+      queryParams.append("keep_closed_markets", params.closed ? "1" : "0")
+    }
+    if (params.tag_id !== undefined) {
+      // Note: public-search API uses events_tag (array of tag slugs), not tag_id
+      // For now, we'll filter client-side after fetching results
+      // TODO: Could enhance by fetching tag slug from tag_id first
+    }
+    if (params.order) queryParams.append("sort", params.order)
     if (params.ascending !== undefined) queryParams.append("ascending", params.ascending.toString())
 
-    const url = `${GAMMA_API_BASE}/markets?${queryParams.toString()}`
+    // Only search events (not profiles)
+    queryParams.append("search_profiles", "false")
+
+    const url = `${GAMMA_API_BASE}/public-search?${queryParams.toString()}`
     const response = await fetch(url)
 
     if (!response.ok) {
       throw new Error(`Polymarket API error: ${response.status} ${response.statusText}`)
     }
 
-    return await response.json()
+    const data: SearchResponse = await response.json()
+
+    // Extract and normalize markets from events, tracking event info for tag filtering
+    const markets: Market[] = []
+    const marketEventMap = new Map<string, SearchEvent>() // Map market ID to its event
+    
+    if (data.events && Array.isArray(data.events)) {
+      for (const event of data.events) {
+        // Filter events by tag_id if specified
+        if (params.tag_id !== undefined && event.tags) {
+          const hasTag = event.tags.some(tag => tag.id === params.tag_id!.toString())
+          if (!hasTag) {
+            continue // Skip events without the specified tag
+          }
+        }
+
+        if (event.markets && Array.isArray(event.markets)) {
+          for (const market of event.markets) {
+            const normalizedMarket = this.normalizeMarket(market)
+            markets.push(normalizedMarket)
+            marketEventMap.set(market.id, event)
+          }
+        }
+      }
+    }
+
+    // Apply additional filters that weren't handled by the API
+    let filteredMarkets = markets
+
+    if (params.liquidity_min !== undefined) {
+      filteredMarkets = filteredMarkets.filter(m => {
+        const liquidity = parseFloat(m.liquidity)
+        return !isNaN(liquidity) && liquidity >= params.liquidity_min!
+      })
+    }
+
+    if (params.volume_min !== undefined) {
+      filteredMarkets = filteredMarkets.filter(m => {
+        const volume = parseFloat(m.volume)
+        return !isNaN(volume) && volume >= params.volume_min!
+      })
+    }
+
+    // Apply limit after filtering
+    if (params.limit !== undefined && filteredMarkets.length > params.limit) {
+      filteredMarkets = filteredMarkets.slice(0, params.limit)
+    }
+
+    return filteredMarkets
   }
 
   /**
@@ -231,15 +389,19 @@ class PolymarketClient {
  * Format a market for Claude-friendly analysis
  */
 function formatMarketAnalysis(market: Market): string {
-  const probability = market.outcomePrices[0] ? (parseFloat(market.outcomePrices[0]) * 100).toFixed(1) : "N/A"
+  const probability = market.outcomePrices && market.outcomePrices.length > 0 && market.outcomePrices[0] 
+    ? (parseFloat(market.outcomePrices[0]) * 100).toFixed(1) 
+    : "N/A"
   const volume24h = market.volume24hr ? `$${(parseFloat(market.volume24hr) / 1000).toFixed(1)}k` : "N/A"
 
   let analysis = `📊 **${market.question}**\n\n`
-  analysis += `**Current Probability:** ${probability}% (${market.outcomes[0] || 'Yes'})\n`
+  analysis += `**Current Probability:** ${probability}% (${market.outcomes && market.outcomes.length > 0 ? market.outcomes[0] : 'Yes'})\n`
   analysis += `**Status:** ${market.closed ? '🔴 Closed' : market.active ? '🟢 Active' : '⚪ Inactive'}\n`
   analysis += `**Volume (24h):** ${volume24h}\n`
-  analysis += `**Total Volume:** $${(parseFloat(market.volume) / 1000).toFixed(1)}k\n`
-  analysis += `**Liquidity:** $${(parseFloat(market.liquidity) / 1000).toFixed(1)}k\n`
+  const totalVolume = market.volume ? (parseFloat(market.volume) / 1000).toFixed(1) : "0.0"
+  const liquidity = market.liquidity ? (parseFloat(market.liquidity) / 1000).toFixed(1) : "0.0"
+  analysis += `**Total Volume:** $${totalVolume}k\n`
+  analysis += `**Liquidity:** $${liquidity}k\n`
 
   if (market.endDate) {
     analysis += `**End Date:** ${new Date(market.endDate).toLocaleDateString()}\n`
@@ -266,8 +428,13 @@ function formatTradesSummary(trades: Trade[]): string {
 
   let summary = `📈 **Recent Trading Activity**\n\n`
   summary += `**Total Trades:** ${trades.length}\n`
-  summary += `**Buy Orders:** ${buyTrades} (${((buyTrades / trades.length) * 100).toFixed(1)}%)\n`
-  summary += `**Sell Orders:** ${sellTrades} (${((sellTrades / trades.length) * 100).toFixed(1)}%)\n`
+  if (trades.length > 0) {
+    summary += `**Buy Orders:** ${buyTrades} (${((buyTrades / trades.length) * 100).toFixed(1)}%)\n`
+    summary += `**Sell Orders:** ${sellTrades} (${((sellTrades / trades.length) * 100).toFixed(1)}%)\n`
+  } else {
+    summary += `**Buy Orders:** 0 (0%)\n`
+    summary += `**Sell Orders:** 0 (0%)\n`
+  }
   summary += `**Total Volume:** ${totalVolume.toFixed(2)} shares\n`
 
   if (trades.length > 0) {
@@ -351,10 +518,13 @@ export default function createServer({
         let response = `Found ${markets.length} markets:\n\n`
 
         markets.forEach((market, idx) => {
-          const prob = market.outcomePrices[0] ? (parseFloat(market.outcomePrices[0]) * 100).toFixed(1) : "N/A"
+          const prob = market.outcomePrices && market.outcomePrices.length > 0 && market.outcomePrices[0] 
+            ? (parseFloat(market.outcomePrices[0]) * 100).toFixed(1) 
+            : "N/A"
+          const volume = market.volume ? (parseFloat(market.volume) / 1000).toFixed(1) : "0.0"
           response += `${idx + 1}. **${market.question}**\n`
           response += `   Slug: \`${market.slug}\`\n`
-          response += `   Probability: ${prob}% | Volume: $${(parseFloat(market.volume) / 1000).toFixed(1)}k\n`
+          response += `   Probability: ${prob}% | Volume: $${volume}k\n`
           response += `   Status: ${market.closed ? 'Closed' : market.active ? 'Active' : 'Inactive'}\n\n`
         })
 
@@ -508,7 +678,9 @@ export default function createServer({
         if (event.markets && event.markets.length > 0) {
           response += `\n**Markets (${event.markets.length}):**\n\n`
           event.markets.forEach((market, idx) => {
-            const prob = market.outcomePrices[0] ? (parseFloat(market.outcomePrices[0]) * 100).toFixed(1) : "N/A"
+            const prob = market.outcomePrices && market.outcomePrices.length > 0 && market.outcomePrices[0] 
+              ? (parseFloat(market.outcomePrices[0]) * 100).toFixed(1) 
+              : "N/A"
             response += `${idx + 1}. ${market.question}\n`
             response += `   Probability: ${prob}% | Slug: \`${market.slug}\`\n\n`
           })
@@ -653,7 +825,7 @@ export default function createServer({
         let response = formatMarketAnalysis(market)
 
         // Add detailed outcome analysis
-        if (market.outcomes && market.outcomePrices) {
+        if (market.outcomes && market.outcomePrices && market.outcomePrices.length > 0) {
           response += `\n\n**📊 Probability Analysis:**\n`
           const prices = market.outcomePrices.map(p => parseFloat(p) * 100)
           const maxProb = Math.max(...prices)
@@ -685,8 +857,8 @@ export default function createServer({
         }
 
         // Add market health indicators
-        const liquidityNum = parseFloat(market.liquidity)
-        const volumeNum = parseFloat(market.volume)
+        const liquidityNum = market.liquidity ? parseFloat(market.liquidity) : 0
+        const volumeNum = market.volume ? parseFloat(market.volume) : 0
 
         response += `\n\n**💡 Market Health:**\n`
         if (liquidityNum > 100000) {
