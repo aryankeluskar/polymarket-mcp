@@ -1,5 +1,7 @@
 # Polymarket MCP Server
 
+[![smithery badge](https://smithery.ai/badge/@aryankeluskar/polymarket-mcp)](https://smithery.ai/server/@aryankeluskar/polymarket-mcp)
+
 A comprehensive Model Context Protocol (MCP) server for accessing Polymarket's prediction markets through Claude AI. Build market analysis tools, trading assistants, event outcome analyzers, and educational platforms that make prediction markets more accessible.
 
 Built with [Smithery SDK](https://smithery.ai/docs) | Powered by [Polymarket API](https://docs.polymarket.com)
@@ -268,4 +270,3 @@ ISC
 ## Acknowledgments
 
 Built with the Model Context Protocol by Anthropic and deployed via Smithery.
-
