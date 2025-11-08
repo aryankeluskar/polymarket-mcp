@@ -124,21 +124,7 @@ async function initializeMCPClient() {
   }
 }
 
-async function reconnectAfterAuth(authCode: string): Promise<void> {
-  if (!mcpTransport || !oauthProvider) {
-    throw new Error("OAuth provider not initialized");
-  }
-
-  console.log("\n🔄 Completing OAuth flow...");
-
-  await mcpTransport.finishAuth(authCode);
-  oauthProvider.clearPendingAuth();
-
-  console.log("✅ OAuth authentication successful!");
-  console.log("🔌 Fetching available tools...\n");
-
-  // The transport is already connected after finishAuth
-  // We can now use the client to list tools
+async function initializeTools(): Promise<void> {
   if (!mcpClient) {
     throw new Error("MCP client not initialized");
   }
@@ -181,9 +167,62 @@ async function reconnectAfterAuth(authCode: string): Promise<void> {
   } catch (error) {
     console.log("ℹ️  No resources available");
   }
+}
+
+async function reconnectAfterAuth(authCode: string): Promise<void> {
+  if (!mcpTransport || !oauthProvider) {
+    throw new Error("OAuth provider not initialized");
+  }
+
+  console.log("\n🔄 Completing OAuth flow...");
+
+  await mcpTransport.finishAuth(authCode);
+  oauthProvider.clearPendingAuth();
+
+  console.log("✅ OAuth authentication successful!");
+  console.log("🔌 Fetching available tools...\n");
+
+  await initializeTools();
 
   console.log("\n✅ Backend fully connected and ready!");
   console.log("💡 You can now use the chat interface!\n");
+}
+
+async function reconnectMCPSession(): Promise<void> {
+  console.log("\n🔄 Session expired, reconnecting to MCP server...");
+
+  // Close existing client
+  if (mcpClient) {
+    await mcpClient.close();
+  }
+
+  // Create new transport and client
+  if (!oauthProvider) {
+    throw new Error("OAuth provider not initialized");
+  }
+
+  mcpTransport = new StreamableHTTPClientTransport(
+    new URL(POLYMARKET_MCP_URL),
+    {
+      authProvider: oauthProvider,
+    }
+  );
+
+  mcpClient = new Client(
+    {
+      name: "polymarket-mcp-demo",
+      version: "1.0.0",
+    },
+    {
+      capabilities: {},
+    }
+  );
+
+  await mcpClient.connect(mcpTransport);
+  console.log("✅ Reconnected to Polymarket MCP server");
+
+  await initializeTools();
+  console.log("✅ Session restored!\n");
 }
 
 // ============================================================================
@@ -257,18 +296,42 @@ Always explain what the probabilities mean and provide context for the markets y
           console.log(`🔧 Tool called: ${toolUse.name}`);
           console.log(`   Input:`, JSON.stringify(toolUse.input, null, 2));
 
-          const result = await mcpClient!.callTool({
-            name: toolUse.name,
-            arguments: toolUse.input as Record<string, unknown>,
-          });
+          // Retry logic for session expiration
+          let retries = 0;
+          const maxRetries = 2;
 
-          console.log(`✅ Tool result received for ${toolUse.name}`);
+          while (retries < maxRetries) {
+            try {
+              const result = await mcpClient!.callTool({
+                name: toolUse.name,
+                arguments: toolUse.input as Record<string, unknown>,
+              });
 
-          return {
-            type: "tool_result" as const,
-            tool_use_id: toolUse.id,
-            content: JSON.stringify(result.content),
-          };
+              console.log(`✅ Tool result received for ${toolUse.name}`);
+
+              return {
+                type: "tool_result" as const,
+                tool_use_id: toolUse.id,
+                content: JSON.stringify(result.content),
+              };
+            } catch (error: any) {
+              const errorMessage = error?.message || String(error);
+
+              // Check if it's a session expiration error
+              if (errorMessage.includes("Session not found or expired") && retries < maxRetries - 1) {
+                console.log(`⚠️  Session expired, reconnecting... (attempt ${retries + 1}/${maxRetries - 1})`);
+                await reconnectMCPSession();
+                retries++;
+                continue;
+              }
+
+              // If not session error or out of retries, throw
+              throw error;
+            }
+          }
+
+          // This should never be reached, but TypeScript needs it
+          throw new Error(`Failed to call tool ${toolUse.name} after ${maxRetries} attempts`);
         })
       );
 
