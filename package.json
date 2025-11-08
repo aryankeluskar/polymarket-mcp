@@ -1,7 +1,7 @@
 {
-	"name": "hello-server",
+	"name": "polymarket-mcp",
 	"version": "1.0.0",
-	"description": "",
+	"description": "MCP server for accessing Polymarket's prediction markets. Build market analysis tools, trading assistants, and educational platforms with Claude AI.",
 	"main": "index.js",
 	"module": "./src/index.ts",
 	"type": "module",
@@ -9,9 +9,23 @@
 		"dev": "smithery dev",
 		"build": "smithery build"
 	},
-	"keywords": [],
+	"keywords": [
+		"mcp",
+		"model-context-protocol",
+		"polymarket",
+		"prediction-markets",
+		"claude",
+		"ai",
+		"trading",
+		"market-analysis",
+		"smithery"
+	],
 	"author": "",
 	"license": "ISC",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/YOUR_USERNAME/polymarket-mcp"
+	},
 	"dependencies": {
 		"@modelcontextprotocol/sdk": "^1.20.0",
 		"@smithery/sdk": "^1.7.4",
