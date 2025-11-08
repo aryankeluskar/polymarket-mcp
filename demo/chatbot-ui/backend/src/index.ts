@@ -1,10 +1,12 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { WebSocketClientTransport } from "@modelcontextprotocol/sdk/client/websocket.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
 import express from "express";
 import { WebSocketServer, WebSocket } from "ws";
 import * as dotenv from "dotenv";
 import cors from "cors";
+import { SimpleOAuthProvider } from "./oauth-provider.js";
 
 dotenv.config();
 
@@ -27,6 +29,8 @@ if (!ANTHROPIC_API_KEY) {
 // ============================================================================
 
 let mcpClient: Client | null = null;
+let mcpTransport: StreamableHTTPClientTransport | null = null;
+let oauthProvider: SimpleOAuthProvider | null = null;
 let availableTools: Anthropic.Messages.Tool[] = [];
 
 async function initializeMCPClient() {
@@ -34,18 +38,39 @@ async function initializeMCPClient() {
     console.log("🔌 Connecting to Polymarket MCP server...");
     console.log(`   URL: ${POLYMARKET_MCP_URL}`);
 
-    const transport = new WebSocketClientTransport(
-      new URL(POLYMARKET_MCP_URL)
+    // Create OAuth provider
+    oauthProvider = new SimpleOAuthProvider(
+      `http://localhost:${PORT}/oauth/callback`,
+      {
+        client_name: "Polymarket MCP Demo",
+        redirect_uris: [`http://localhost:${PORT}/oauth/callback`],
+        grant_types: ["authorization_code", "refresh_token"],
+        response_types: ["code"],
+        token_endpoint_auth_method: "none",
+        scope: "mcp:tools mcp:prompts mcp:resources",
+      }
     );
 
-    mcpClient = new Client({
-      name: "polymarket-demo-client",
-      version: "1.0.0",
-    }, {
-      capabilities: {},
-    });
+    // Try to load saved tokens
+    await oauthProvider.loadSavedTokens();
 
-    await mcpClient.connect(transport);
+    // Use StreamableHTTP transport for Smithery servers
+    mcpTransport = new StreamableHTTPClientTransport(
+      new URL(POLYMARKET_MCP_URL),
+      { authProvider: oauthProvider }
+    );
+
+    mcpClient = new Client(
+      {
+        name: "polymarket-demo-client",
+        version: "1.0.0",
+      },
+      {
+        capabilities: {},
+      }
+    );
+
+    await mcpClient.connect(mcpTransport);
     console.log("✅ Connected to Polymarket MCP server");
 
     // List available tools
@@ -88,9 +113,77 @@ async function initializeMCPClient() {
     }
 
   } catch (error) {
+    if (error instanceof UnauthorizedError) {
+      // OAuth authentication required
+      console.log("\n⏳ Waiting for OAuth authentication to complete...");
+      console.log("   Once you authorize, the server will automatically reconnect.\n");
+      return; // Don't throw, let the callback handle reconnection
+    }
     console.error("❌ Failed to connect to MCP server:", error);
     throw error;
   }
+}
+
+async function reconnectAfterAuth(authCode: string): Promise<void> {
+  if (!mcpTransport || !oauthProvider) {
+    throw new Error("OAuth provider not initialized");
+  }
+
+  console.log("\n🔄 Completing OAuth flow...");
+
+  await mcpTransport.finishAuth(authCode);
+  oauthProvider.clearPendingAuth();
+
+  console.log("✅ OAuth authentication successful!");
+  console.log("🔌 Fetching available tools...\n");
+
+  // The transport is already connected after finishAuth
+  // We can now use the client to list tools
+  if (!mcpClient) {
+    throw new Error("MCP client not initialized");
+  }
+
+  // List available tools
+  const toolsResponse = await mcpClient.listTools();
+  console.log(`📋 Found ${toolsResponse.tools.length} tools:`);
+
+  toolsResponse.tools.forEach((tool, index) => {
+    console.log(`   ${index + 1}. ${tool.name} - ${tool.description}`);
+  });
+
+  // Convert MCP tools to Anthropic tool format
+  availableTools = toolsResponse.tools.map((tool) => ({
+    name: tool.name,
+    description: tool.description || "",
+    input_schema: tool.inputSchema as Anthropic.Messages.Tool.InputSchema,
+  }));
+
+  console.log("✅ Tools converted to Anthropic format");
+
+  // List prompts
+  try {
+    const promptsResponse = await mcpClient.listPrompts();
+    console.log(`📝 Found ${promptsResponse.prompts.length} prompts:`);
+    promptsResponse.prompts.forEach((prompt, index) => {
+      console.log(`   ${index + 1}. ${prompt.name} - ${prompt.description}`);
+    });
+  } catch (error) {
+    console.log("ℹ️  No prompts available");
+  }
+
+  // List resources
+  try {
+    const resourcesResponse = await mcpClient.listResources();
+    console.log(`📚 Found ${resourcesResponse.resources.length} resources:`);
+    resourcesResponse.resources.forEach((resource, index) => {
+      console.log(`   ${index + 1}. ${resource.uri} - ${resource.name}`);
+    });
+  } catch (error) {
+    console.log("ℹ️  No resources available");
+  }
+
+  console.log("\n✅ Backend fully connected and ready!");
+  console.log("💡 You can now use the chat interface!\n");
 }
 
 // ============================================================================
@@ -124,7 +217,7 @@ async function processMessageWithClaude(
     ];
 
     let response = await anthropic.messages.create({
-      model: "claude-3-5-sonnet-20241022",
+      model: "claude-haiku-4-5",
       max_tokens: 4096,
       system: `You are a helpful assistant with access to Polymarket prediction market data. You can help users:
 
@@ -180,7 +273,7 @@ Always explain what the probabilities mean and provide context for the markets y
       });
 
       response = await anthropic.messages.create({
-        model: "claude-3-5-sonnet-20241022",
+        model: "claude-haiku-4-5",
         max_tokens: 4096,
         messages,
         tools: availableTools,
@@ -220,6 +313,79 @@ Always explain what the probabilities mean and provide context for the markets y
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// OAuth callback endpoint
+app.get("/oauth/callback", async (req, res) => {
+  const code = req.query.code as string;
+  const error = req.query.error as string;
+
+  if (code) {
+    try {
+      await reconnectAfterAuth(code);
+      res.send(`
+        <html>
+          <head>
+            <title>OAuth Success</title>
+            <style>
+              body { font-family: system-ui; max-width: 600px; margin: 50px auto; padding: 20px; }
+              .success { background: #d4edda; border: 1px solid #c3e6cb; color: #155724; padding: 20px; border-radius: 8px; }
+              h1 { margin-top: 0; }
+            </style>
+          </head>
+          <body>
+            <div class="success">
+              <h1>✅ Authentication Successful!</h1>
+              <p>You can close this window and return to your terminal.</p>
+              <p>The Polymarket MCP server is now connected and ready to use.</p>
+            </div>
+          </body>
+        </html>
+      `);
+    } catch (err) {
+      console.error("Failed to complete OAuth:", err);
+      res.status(500).send(`
+        <html>
+          <head>
+            <title>OAuth Error</title>
+            <style>
+              body { font-family: system-ui; max-width: 600px; margin: 50px auto; padding: 20px; }
+              .error { background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 20px; border-radius: 8px; }
+              h1 { margin-top: 0; }
+            </style>
+          </head>
+          <body>
+            <div class="error">
+              <h1>❌ Authentication Failed</h1>
+              <p>Error: ${err instanceof Error ? err.message : 'Unknown error'}</p>
+              <p>Please check the server logs and try again.</p>
+            </div>
+          </body>
+        </html>
+      `);
+    }
+  } else if (error) {
+    res.status(400).send(`
+      <html>
+        <head>
+          <title>OAuth Error</title>
+          <style>
+            body { font-family: system-ui; max-width: 600px; margin: 50px auto; padding: 20px; }
+            .error { background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 20px; border-radius: 8px; }
+            h1 { margin-top: 0; }
+          </style>
+        </head>
+        <body>
+          <div class="error">
+            <h1>❌ Authorization Failed</h1>
+            <p>Error: ${error}</p>
+          </div>
+        </body>
+      </html>
+    `);
+  } else {
+    res.status(400).send("Invalid OAuth callback");
+  }
+});
 
 // Health check endpoint
 app.get("/health", (req, res) => {
@@ -291,10 +457,19 @@ async function startup() {
 
   try {
     await initializeMCPClient();
-    console.log("\n✅ Backend ready!");
-    console.log(`📡 WebSocket server: ws://localhost:${PORT}`);
-    console.log(`🌐 HTTP server: http://localhost:${PORT}`);
-    console.log("\n💡 Connect your frontend to ws://localhost:${PORT}\n");
+
+    if (mcpClient && availableTools.length > 0) {
+      console.log("\n✅ Backend ready!");
+      console.log(`📡 WebSocket server: ws://localhost:${PORT}`);
+      console.log(`🌐 HTTP server: http://localhost:${PORT}`);
+      console.log("\n💡 Connect your frontend to ws://localhost:${PORT}\n");
+    } else {
+      // OAuth authentication is in progress
+      console.log("\n⏳ Server is running, waiting for OAuth authentication...");
+      console.log(`📡 WebSocket server: ws://localhost:${PORT}`);
+      console.log(`🌐 HTTP server: http://localhost:${PORT}`);
+      console.log(`🔐 OAuth callback: http://localhost:${PORT}/oauth/callback\n`);
+    }
   } catch (error) {
     console.error("❌ Startup failed:", error);
     process.exit(1);

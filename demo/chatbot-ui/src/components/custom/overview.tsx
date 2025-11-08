@@ -22,6 +22,9 @@ export const Overview = () => {
           Welcome to <strong>chatbot-ui</strong><br />
           a open source template made by<br />
           <strong>Leon Binder</strong> and <strong>Christoph Handschuh</strong>.
+          <br />
+          <br />
+          This is a demo of the <strong>Polymarket MCP</strong> server for the <strong>Claude Builder</strong> club's hackathon at ASU.
         </p>
       </div>
     </motion.div>
