@@ -74,6 +74,7 @@ class PolymarketClient {
    * Search for markets with various filters
    */
   async searchMarkets(params: {
+    query?: string
     limit?: number
     offset?: number
     closed?: boolean
@@ -85,6 +86,7 @@ class PolymarketClient {
   }): Promise<Market[]> {
     const queryParams = new URLSearchParams()
 
+    if (params.query) queryParams.append("query", params.query)
     if (params.limit !== undefined) queryParams.append("limit", params.limit.toString())
     if (params.offset !== undefined) queryParams.append("offset", params.offset.toString())
     if (params.closed !== undefined) queryParams.append("closed", params.closed.toString())
@@ -309,13 +311,14 @@ export default function createServer({
       title: "Search Markets",
       description: "Search Polymarket prediction markets with filters. Find active markets, filter by tags, volume, liquidity, and more. Perfect for market discovery and analysis.",
       inputSchema: {
+        query: z.string().optional().describe("Search query to filter markets by question text (e.g., 'Bitcoin $100k', 'Trump wins')"),
         limit: z.number().optional().default(10).describe("Number of results (max 100)"),
         offset: z.number().optional().default(0).describe("Pagination offset"),
-        closed: z.boolean().optional().describe("Filter by closed status (false = only active markets)"),
+        closed: z.boolean().optional().default(false).describe("Filter by closed status (false = only active markets, true = include closed)"),
         tag_id: z.number().optional().describe("Filter by tag ID (use list_tags to discover)"),
         liquidity_min: z.number().optional().describe("Minimum liquidity in USD"),
         volume_min: z.number().optional().describe("Minimum volume in USD"),
-        order: z.string().optional().describe("Field to order by (e.g., 'volume', 'liquidity')"),
+        order: z.string().optional().describe("Field to order by (e.g., 'volume', 'liquidity', 'volume24hr')"),
         ascending: z.boolean().optional().describe("Sort direction (true = ascending, false = descending)"),
       },
       annotations: {
@@ -327,6 +330,23 @@ export default function createServer({
     async (params) => {
       try {
         const markets = await client.searchMarkets(params)
+
+        if (markets.length === 0) {
+          let response = `No markets found matching your criteria.\n\n`
+          if (params.query) {
+            response += `**Search query:** "${params.query}"\n\n`
+            response += `💡 **Suggestions:**\n`
+            response += `• Try different keywords or variations (e.g., "BTC" instead of "Bitcoin")\n`
+            response += `• Remove the query parameter to see all active markets\n`
+            response += `• Try searching with \`closed: true\` to include closed markets\n`
+            response += `• Use \`list_tags\` to find relevant categories, then filter by tag_id\n`
+          } else {
+            response += `💡 Try adding a \`query\` parameter to search for specific markets, or adjust your filters.`
+          }
+          return {
+            content: [{ type: "text", text: response }],
+          }
+        }
 
         let response = `Found ${markets.length} markets:\n\n`
 
